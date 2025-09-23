@@ -7,48 +7,55 @@
 const char *TOPIC = "UPV/SCI";
 const int QOS = 2;
 
-void on_connect(struct mosquitto *mosq, void *obj, int reason_code) {
+void on_connect(struct mosquitto *mosq, void *obj, int reason_code)
+{
   printf("on_connect: %s\n", mosquitto_connack_string(reason_code));
 }
-void on_disconnect(struct mosquitto *mosq, void *obj, int reason_code) {
+void on_disconnect(struct mosquitto *mosq, void *obj, int reason_code)
+{
   printf("on_disconnect: %s\n", mosquitto_connack_string(reason_code));
 }
 void on_message(struct mosquitto *mosq, void *obj,
-                const struct mosquitto_message *msg) {
+                const struct mosquitto_message *msg)
+{
   printf("%s\n", (char *)msg->payload);
 }
 
-char *get_username() {
+char *get_username()
+{
   static char username[100] = "";
 
   printf("Enter a username: ");
-  if (fgets(username, sizeof(username), stdin) == NULL) {
+  if (fgets(username, sizeof(username), stdin) == NULL)
+  {
     return NULL;
   }
   username[strcspn(username, "\n")] = '\0';
   return username;
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[])
+{
   char *username = get_username();
   printf("tu usuario %s\n", username);
-   struct mosquitto *mosq;
-   int rc;
-   mosquitto_lib_init();
-   mosq = mosquitto_new(NULL, true, NULL);
-   if (mosq == NULL) {
-       fprintf(stderr, "Error: Out of memory.\n");
-       return 1;
-   }
+  struct mosquitto *mosq;
+  int rc;
+  mosquitto_lib_init();
+  mosq = mosquitto_new(NULL, true, NULL);
+  if (mosq == NULL)
+  {
+    fprintf(stderr, "Error: Out of memory.\n");
+    return 1;
+  }
 
-   char mss_with_username[200];
-   snprintf(mss_with_username, sizeof(mss_with_username), "El usuario %s ha iniciado sesión", username);
+  char mss_with_username[200];
+  snprintf(mss_with_username, sizeof(mss_with_username), "El usuario %s ha iniciado sesión", username);
 
-   rc = mosquitto_publish(mosq, NULL, TOPIC, strlen(mss_with_username), mss_with_username, 1, false);
-    if (rc != MOSQ_ERR_SUCCESS) {
-        fprintf(stderr, "Error publishing: %s\n", mosquitto_strerror(rc));
-    }
-    
+  rc = mosquitto_publish(mosq, NULL, TOPIC, strlen(mss_with_username), mss_with_username, 1, false);
+  if (rc != MOSQ_ERR_SUCCESS)
+  {
+    fprintf(stderr, "Error publishing: %s\n", mosquitto_strerror(rc));
+  }
 
   char will[200];
   sprintf(will, "El usuario %s ha cerrado sesión de forma abrupta", username);
@@ -60,20 +67,23 @@ int main(int argc, char *argv[]) {
 
   mosquitto_loop_start(mosq);
   rc = mosquitto_connect(mosq, "test.mosquitto.org", 1883, 60);
-  if (rc != MOSQ_ERR_SUCCESS) {
+  if (rc != MOSQ_ERR_SUCCESS)
+  {
     mosquitto_destroy(mosq);
     fprintf(stderr, "Error: %s\n", mosquitto_strerror(rc));
     return 1;
   }
 
   rc = mosquitto_subscribe(mosq, NULL, TOPIC, QOS);
-  if (rc != MOSQ_ERR_SUCCESS) {
+  if (rc != MOSQ_ERR_SUCCESS)
+  {
     mosquitto_destroy(mosq);
     fprintf(stderr, "Error: %s\n", mosquitto_strerror(rc));
     return 1;
   }
 
-  for (;;) {
+  for (;;)
+  {
     char line[100];
     if (fgets(line, 100, stdin) == NULL)
       break;
@@ -81,7 +91,12 @@ int main(int argc, char *argv[]) {
     sprintf(buffer, "(%s): %s", username, line);
     rc = mosquitto_publish(mosq, NULL, TOPIC, strlen(buffer), buffer, QOS,
                            false);
-    if (rc != MOSQ_ERR_SUCCESS) {
+    if (strcmp(line, "/salir")){}
+    if (strcmp(line, "/privado")){}
+    if (strcmp(line, "/lista")){}
+    
+    if (rc != MOSQ_ERR_SUCCESS)
+    {
       fprintf(stderr, "Error publishing: %s\n", mosquitto_strerror(rc));
     }
   }
