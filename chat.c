@@ -1,133 +1,163 @@
 #include <mosquitto.h>
 #include <stdio.h>
 #include <string.h>
-#include <time.h>
+#include <stdlib.h>
 #include <unistd.h>
 
 const char *TOPIC = "UPV/SCI";
 const int QOS = 2;
 
-void on_connect(struct mosquitto *mosq, void *obj, int reason_code)
-{
-  printf("on_connect: %s\n", mosquitto_connack_string(reason_code));
-}
-void on_disconnect(struct mosquitto *mosq, void *obj, int reason_code)
-{
-  printf("on_disconnect: %s\n", mosquitto_connack_string(reason_code));
-}
-void on_message(struct mosquitto *mosq, void *obj,
-                const struct mosquitto_message *msg)
-{
-  printf("%s\n", (char *)msg->payload);
-}
+#define MAX_USERS 100
 
-char *get_username()
-{
-  static char username[100] = "";
+// Lista simple de usuarios conectados
+char *usuarios[MAX_USERS];
+int num_usuarios = 0;
 
-  printf("Enter a username: ");
-  if (fgets(username, sizeof(username), stdin) == NULL)
-  {
-    return NULL;
-  }
-  username[strcspn(username, "\n")] = '\0';
-  return username;
-}
-
-int main(int argc, char *argv[])
-{
-  char *username = get_username();
-  printf("tu usuario %s\n", username);
-  struct mosquitto *mosq;
-  int rc;
-  mosquitto_lib_init();
-  mosq = mosquitto_new(NULL, true, NULL);
-  if (mosq == NULL)
-  {
-    fprintf(stderr, "Error: Out of memory.\n");
-    return 1;
-  }
-
-  char mss_with_username[200];
-  snprintf(mss_with_username, sizeof(mss_with_username), "El usuario %s ha iniciado sesión", username);
-
-  rc = mosquitto_publish(mosq, NULL, TOPIC, strlen(mss_with_username), mss_with_username, 1, false);
-  if (rc != MOSQ_ERR_SUCCESS)
-  {
-    fprintf(stderr, "Error publishing: %s\n", mosquitto_strerror(rc));
-  }
-
-  char will[200];
-  sprintf(will, "El usuario %s ha cerrado sesión de forma abrupta", username);
-
-  mosquitto_will_set(mosq, TOPIC, strlen(will), will, QOS, false);
-  mosquitto_connect_callback_set(mosq, on_connect);
-  mosquitto_disconnect_callback_set(mosq, on_disconnect);
-  mosquitto_message_callback_set(mosq, on_message);
-
-  mosquitto_loop_start(mosq);
-  rc = mosquitto_connect(mosq, "test.mosquitto.org", 1883, 60);
-  if (rc != MOSQ_ERR_SUCCESS)
-  {
-    mosquitto_destroy(mosq);
-    fprintf(stderr, "Error: %s\n", mosquitto_strerror(rc));
-    return 1;
-  }
-
-  rc = mosquitto_subscribe(mosq, NULL, TOPIC, QOS);
-  if (rc != MOSQ_ERR_SUCCESS)
-  {
-    mosquitto_destroy(mosq);
-    fprintf(stderr, "Error: %s\n", mosquitto_strerror(rc));
-    return 1;
-  }
-
-  for (;;)
-  {
-    char line[100];
-    if (fgets(line, 100, stdin) == NULL)
-      break;
-    char buffer[200];
-    sprintf(buffer, "(%s): %s", username, line);
-    rc = mosquitto_publish(mosq, NULL, TOPIC, strlen(buffer), buffer, QOS,
-                           false);
-    if (strcmp(line, "/salir")){}
-    if (strcmp(line, "/privado")){}
-    if (strcmp(line, "/lista")){}
-    
-    if (rc != MOSQ_ERR_SUCCESS)
-    {
-      fprintf(stderr, "Error publishing: %s\n", mosquitto_strerror(rc));
+void add_user(const char *username) {
+    for (int i = 0; i < num_usuarios; i++) {
+        if (strcmp(usuarios[i], username) == 0) return;
     }
-  }
+    if (num_usuarios < MAX_USERS) {
+        usuarios[num_usuarios++] = strdup(username);
+    }
+}
 
-  mosquitto_loop_stop(mosq, false);
-  mosquitto_disconnect(mosq);
-  mosquitto_destroy(mosq);
-  mosquitto_lib_cleanup();
+void remove_user(const char *username) {
+    for (int i = 0; i < num_usuarios; i++) {
+        if (strcmp(usuarios[i], username) == 0) {
+            free(usuarios[i]);
+            for (int j = i; j < num_usuarios - 1; j++) {
+                usuarios[j] = usuarios[j + 1];
+            }
+            num_usuarios--;
+            return;
+        }
+    }
+}
 
-  //  /* main loop */
-  //  time_t last_publish = 0;
-  //  int msg_count = 0;
-  //
-  //  while (1) {
-  //      time_t t = time(NULL);
-  //      if (t > last_publish + 10) {
-  //          char line[100];
-  //          snprintf(line, sizeof(line), "message %d", msg_count);
-  //          printf("Publicando: ’%s’\n", line);
-  //          int rc = mosquitto_publish(mosq, NULL, TOPIC, strlen(line), line,
-  //                                     0, true);
-  //          if (rc != MOSQ_ERR_SUCCESS) {
-  //              fprintf(stderr, "Error publishing: %s\n",
-  //              mosquitto_strerror(rc));
-  //          }
-  //          last_publish = t;
-  //          msg_count++;
-  //      }
-  //  }
-  //
-  //  mosquitto_disconnect(mosq);
-  //  mosquitto_lib_cleanup();
-  //  return 0;
+void show_users() {
+    printf("Usuarios conectados (%d):\n", num_usuarios);
+    for (int i = 0; i < num_usuarios; i++) {
+        printf(" - %s\n", usuarios[i]);
+    }
+}
+
+void on_connect(struct mosquitto *mosq, void *obj, int reason_code) {
+    printf("Conectado al broker (%s)\n", mosquitto_connack_string(reason_code));
+}
+
+void on_disconnect(struct mosquitto *mosq, void *obj, int reason_code) {
+    printf("Desconectado (%s)\n", mosquitto_connack_string(reason_code));
+}
+
+void on_message(struct mosquitto *mosq, void *obj,
+                const struct mosquitto_message *msg) {
+    char *payload = (char *)msg->payload;
+
+    if (strncmp(payload, "ONLINE:", 7) == 0) {
+        add_user(payload + 7);
+    } else if (strncmp(payload, "OFFLINE:", 8) == 0) {
+        remove_user(payload + 8);
+    } else {
+        printf("%s\n", payload);
+    }
+}
+
+char *get_username() {
+    static char username[100] = "";
+    printf("Introduce un nombre de usuario: ");
+    if (fgets(username, sizeof(username), stdin) == NULL) {
+        return NULL;
+    }
+    username[strcspn(username, "\n")] = '\0';
+    return username;
+}
+
+int main(int argc, char *argv[]) {
+    char *username = get_username();
+    if (!username || strlen(username) == 0) {
+        printf("Nombre de usuario no válido.\n");
+        return 1;
+    }
+    printf("Tu usuario es: %s\n", username);
+
+    struct mosquitto *mosq;
+    int rc;
+    mosquitto_lib_init();
+
+    mosq = mosquitto_new(NULL, true, NULL);
+    if (!mosq) {
+        fprintf(stderr, "Error: sin memoria.\n");
+        return 1;
+    }
+
+    // Mensaje de "Last Will" (desconexión forzosa)
+    char will[200];
+    snprintf(will, sizeof(will), "OFFLINE:%s", username);
+    mosquitto_will_set(mosq, TOPIC, strlen(will), will, QOS, false);
+
+    mosquitto_connect_callback_set(mosq, on_connect);
+    mosquitto_disconnect_callback_set(mosq, on_disconnect);
+    mosquitto_message_callback_set(mosq, on_message);
+
+    mosquitto_loop_start(mosq);
+
+    rc = mosquitto_connect(mosq, "test.mosquitto.org", 1883, 60);
+    if (rc != MOSQ_ERR_SUCCESS) {
+        fprintf(stderr, "Error: %s\n", mosquitto_strerror(rc));
+        mosquitto_destroy(mosq);
+        return 1;
+    }
+
+    // Suscripción al canal general
+    mosquitto_subscribe(mosq, NULL, TOPIC, QOS);
+
+    // Suscripción al canal privado del usuario
+    char private_topic[100];
+    snprintf(private_topic, sizeof(private_topic), "%s/privado/%s", TOPIC, username);
+    mosquitto_subscribe(mosq, NULL, private_topic, QOS);
+
+    // Avisar que estoy online
+    char online_msg[200];
+    snprintf(online_msg, sizeof(online_msg), "ONLINE:%s", username);
+    mosquitto_publish(mosq, NULL, TOPIC, strlen(online_msg), online_msg, QOS, false);
+
+    // Bucle principal de lectura de comandos
+    for (;;) {
+        char line[200];
+        if (fgets(line, sizeof(line), stdin) == NULL) break;
+        line[strcspn(line, "\n")] = '\0'; // quitar salto de línea
+
+        if (strncmp(line, "/salir", 6) == 0) {
+            char msg[200];
+            snprintf(msg, sizeof(msg), "OFFLINE:%s", username);
+            mosquitto_publish(mosq, NULL, TOPIC, strlen(msg), msg, QOS, false);
+            mosquitto_disconnect(mosq);
+            break;
+        } else if (strncmp(line, "/privado", 8) == 0) {
+            char destinatario[50], mensaje[150];
+            if (sscanf(line, "/privado %49s %[^\n]", destinatario, mensaje) == 2) {
+                char msg[200];
+                snprintf(msg, sizeof(msg), "[PRIVADO de %s a %s]: %s",
+                         username, destinatario, mensaje);
+                char topic_priv[100];
+                snprintf(topic_priv, sizeof(topic_priv), "%s/privado/%s", TOPIC, destinatario);
+                mosquitto_publish(mosq, NULL, topic_priv, strlen(msg), msg, QOS, false);
+            } else {
+                printf("Uso correcto: /privado <usuario> <mensaje>\n");
+            }
+        } else if (strncmp(line, "/lista", 6) == 0) {
+            show_users();
+        } else {
+            char buffer[250];
+            snprintf(buffer, sizeof(buffer), "(%s): %s", username, line);
+            mosquitto_publish(mosq, NULL, TOPIC, strlen(buffer), buffer, QOS, false);
+        }
+    }
+
+    mosquitto_loop_stop(mosq, false);
+    mosquitto_destroy(mosq);
+    mosquitto_lib_cleanup();
+
+    return 0;
 }
