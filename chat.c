@@ -114,15 +114,6 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    char mss_with_username[200];
-    snprintf(mss_with_username, sizeof(mss_with_username), "El usuario %s ha iniciado sesión", username);
-
-    rc = mosquitto_publish(mosq, NULL, TOPIC, strlen(mss_with_username), mss_with_username, 1, false);
-    if (rc != MOSQ_ERR_SUCCESS)
-    {
-        fprintf(stderr, "Error publishing: %s\n", mosquitto_strerror(rc));
-    }
-
     // Mensaje de "Last Will" (desconexión forzosa)
     char will[200];
     snprintf(will, sizeof(will), "OFFLINE:%s", username);
@@ -142,18 +133,23 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    // Suscripción al canal general
-    mosquitto_subscribe(mosq, NULL, TOPIC, QOS);
-
-    // Suscripción al canal privado del usuario
-    char private_topic[100];
-    snprintf(private_topic, sizeof(private_topic), "%s/privado/%s", TOPIC, username);
-    mosquitto_subscribe(mosq, NULL, private_topic, QOS);
-
     // Avisar que estoy online
     char online_msg[200];
     snprintf(online_msg, sizeof(online_msg), "ONLINE:%s", username);
     mosquitto_publish(mosq, NULL, TOPIC, strlen(online_msg), online_msg, QOS, false);
+
+    // Mensaje visible de inicio de sesión
+    char mss_with_username[200];
+    snprintf(mss_with_username, sizeof(mss_with_username), "El usuario %s ha iniciado sesión", username);
+    mosquitto_publish(mosq, NULL, TOPIC, strlen(mss_with_username), mss_with_username, QOS, false);
+
+    // Suscripción al canal general
+    mosquitto_subscribe(mosq, NULL, TOPIC, QOS);
+
+    // Suscripción al canal privado del usuario
+    char private_topic[200];
+    snprintf(private_topic, sizeof(private_topic), "%s/privado/%s", TOPIC, username);
+    mosquitto_subscribe(mosq, NULL, private_topic, QOS);
 
     // Bucle principal de lectura de comandos
     for (;;)
@@ -165,7 +161,7 @@ int main(int argc, char *argv[])
 
         if (strncmp(line, "/salir", 6) == 0)
         {
-            char msg[200];
+            char msg[500];
             snprintf(msg, sizeof(msg), "OFFLINE:%s", username);
             mosquitto_publish(mosq, NULL, TOPIC, strlen(msg), msg, QOS, false);
             mosquitto_disconnect(mosq);
@@ -176,10 +172,10 @@ int main(int argc, char *argv[])
             char destinatario[50], mensaje[150];
             if (sscanf(line, "/privado %49s %[^\n]", destinatario, mensaje) == 2)
             {
-                char msg[200];
+                char msg[500];
                 snprintf(msg, sizeof(msg), "[PRIVADO de %s a %s]: %s",
                          username, destinatario, mensaje);
-                char topic_priv[100];
+                char topic_priv[500];
                 snprintf(topic_priv, sizeof(topic_priv), "%s/privado/%s", TOPIC, destinatario);
                 mosquitto_publish(mosq, NULL, topic_priv, strlen(msg), msg, QOS, false);
             }
