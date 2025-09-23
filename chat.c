@@ -13,13 +13,17 @@ void on_connect(struct mosquitto *mosq, void *obj, int reason_code) {
 void on_disconnect(struct mosquitto *mosq, void *obj, int reason_code) {
   printf("on_disconnect: %s\n", mosquitto_connack_string(reason_code));
 }
+void on_message(struct mosquitto *mosq, void *obj,
+                const struct mosquitto_message *msg) {
+  printf("%s\n", (char *)msg->payload);
+}
 
 char *get_username() {
   static char username[100] = "";
 
   printf("Enter a username: ");
   if (fgets(username, sizeof(username), stdin) == NULL) {
-    return NULL; // error o EOF
+    return NULL;
   }
   username[strcspn(username, "\n")] = '\0';
   return username;
@@ -46,29 +50,47 @@ int main(int argc, char *argv[]) {
     }
     
 
-    char will[200];
-    sprintf(will, "El usuario %s ha cerrado sesión de forma abrupta", username);
+  char will[200];
+  sprintf(will, "El usuario %s ha cerrado sesión de forma abrupta", username);
 
-   mosquitto_will_set(mosq, TOPIC, strlen(will), will, QOS, false);
-  //  mosquitto_connect_callback_set(mosq, on_connect);
-  //  mosquitto_disconnect_callback_set(mosq, on_disconnect);
-  //  /* Run the network loop in a background thread, this call returns quickly.
-  // */
-  //  rc = mosquitto_loop_start(mosq);
-  //  if (rc != MOSQ_ERR_SUCCESS) {
-  //      mosquitto_destroy(mosq);
-  //      fprintf(stderr, "Error: %s\n", mosquitto_strerror(rc));
-  //      return 1;
-  //  }
-  //  /* Connect to test.mosquitto.org on port 1883, with a keepalive of 60
-  //  seconds.
-  // */
-  //  rc = mosquitto_connect(mosq, "test.mosquitto.org", 1883, 60);
-  //  if (rc != MOSQ_ERR_SUCCESS) {
-  //      mosquitto_destroy(mosq);
-  //      fprintf(stderr, "Error: %s\n", mosquitto_strerror(rc));
-  //      return 1;
-  //  }
+  mosquitto_will_set(mosq, TOPIC, strlen(will), will, QOS, false);
+  mosquitto_connect_callback_set(mosq, on_connect);
+  mosquitto_disconnect_callback_set(mosq, on_disconnect);
+  mosquitto_message_callback_set(mosq, on_message);
+
+  mosquitto_loop_start(mosq);
+  rc = mosquitto_connect(mosq, "test.mosquitto.org", 1883, 60);
+  if (rc != MOSQ_ERR_SUCCESS) {
+    mosquitto_destroy(mosq);
+    fprintf(stderr, "Error: %s\n", mosquitto_strerror(rc));
+    return 1;
+  }
+
+  rc = mosquitto_subscribe(mosq, NULL, TOPIC, QOS);
+  if (rc != MOSQ_ERR_SUCCESS) {
+    mosquitto_destroy(mosq);
+    fprintf(stderr, "Error: %s\n", mosquitto_strerror(rc));
+    return 1;
+  }
+
+  for (;;) {
+    char line[100];
+    if (fgets(line, 100, stdin) == NULL)
+      break;
+    char buffer[200];
+    sprintf(buffer, "(%s): %s", username, line);
+    rc = mosquitto_publish(mosq, NULL, TOPIC, strlen(buffer), buffer, QOS,
+                           false);
+    if (rc != MOSQ_ERR_SUCCESS) {
+      fprintf(stderr, "Error publishing: %s\n", mosquitto_strerror(rc));
+    }
+  }
+
+  mosquitto_loop_stop(mosq, false);
+  mosquitto_disconnect(mosq);
+  mosquitto_destroy(mosq);
+  mosquitto_lib_cleanup();
+
   //  /* main loop */
   //  time_t last_publish = 0;
   //  int msg_count = 0;
