@@ -37,6 +37,15 @@ int main(int argc, char *argv[]) {
        return 1;
    }
 
+   char mss_with_username[200];
+   snprintf(mss_with_username, sizeof(mss_with_username), "El usuario %s ha iniciado sesión", username);
+
+   rc = mosquitto_publish(mosq, NULL, TOPIC, strlen(mss_with_username), mss_with_username, 1, false);
+    if (rc != MOSQ_ERR_SUCCESS) {
+        fprintf(stderr, "Error publishing: %s\n", mosquitto_strerror(rc));
+    }
+    
+
     char will[200];
     sprintf(will, "El usuario %s ha cerrado sesión de forma abrupta", username);
 
