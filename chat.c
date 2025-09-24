@@ -151,8 +151,10 @@ int main(int argc, char *argv[]) {
 
             mosquitto_publish(mosq, NULL, TOPIC, strlen(msg), msg, QOS, false);
 
-            // mosquitto_disconnect(mosq);
-            // break;
+            sleep(1); // sino se desconecta y no se manda el mensaje
+
+            mosquitto_disconnect(mosq);
+            break;
         } else if (strncmp(line, "/privado", 8) == 0) {
             char destinatario[50], mensaje[150];
             if (sscanf(line, "/privado %49s %[^\n]", destinatario, mensaje) == 2) {
@@ -181,6 +183,7 @@ int main(int argc, char *argv[]) {
     }
 
     mosquitto_loop_stop(mosq, false);
+    mosquitto_destroy(mosq);
 
     return 0;
 }
