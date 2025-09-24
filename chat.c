@@ -4,7 +4,7 @@
 #include <string.h>
 #include <unistd.h>
 
-const char *TOPIC = "UPV/SCI/CHAT";
+const char *TOPIC = "UPV/SCI/chat";
 const int QOS = 2;
 
 #define MAX_USERS 100
@@ -24,9 +24,12 @@ void add_user(const char *username) {
     }
 }
 
-void remove_user(const char *username) {
+void remove_user(const char *removeMsg) {
+    char user[50], reason[150];
+
+    sscanf(removeMsg, "%s %[^\n]", user, reason);
     for (int i = 0; i < num_usuarios; i++) {
-        if (strcmp(usuarios[i], username) == 0) {
+        if (strcmp(usuarios[i], user) == 0) {
             free(usuarios[i]);
             for (int j = i; j < num_usuarios - 1; j++) {
                 usuarios[j] = usuarios[j + 1];
@@ -45,7 +48,10 @@ void show_users() {
 }
 
 void show_help() {
-    printf("\t- /help: muestra este mensaje de ayuda\n\t- /lista: muestra todos los usuarios conectados\n\t- /privado: permite enviar un mensaje a un usuario del chat de forma privada\n\t\tuso: /privado [usuario] [mensaje]\n\t- /salir: te desconectas del chat\n");
+    printf("\t- /help: muestra este mensaje de ayuda\n\t- /lista: muestra todos "
+           "los usuarios conectados\n\t- /privado: permite enviar un mensaje a "
+           "un usuario del chat de forma privada\n\t\tuso: /privado [usuario] "
+           "[mensaje]\n\t- /salir: te desconectas del chat\n");
 }
 
 void on_connect(struct mosquitto *mosq, void *obj, int reason_code) {
@@ -61,12 +67,11 @@ void on_message(struct mosquitto *mosq, void *obj,
     char *payload = (char *)msg->payload;
 
     if (strncmp(payload, "ONLINE:", 7) == 0) {
-        add_user(payload + 7);
+        add_user(payload + 8);
     } else if (strncmp(payload, "OFFLINE:", 8) == 0) {
-        remove_user(payload + 8);
-    } else {
-        printf("%s\n", payload);
+        remove_user(payload + 9);
     }
+    printf("%s\n", payload);
 }
 
 char *get_username() {
@@ -98,10 +103,10 @@ int main(int argc, char *argv[]) {
     }
 
     // Mensaje de "Last Will" (desconexión forzosa)
-    char will[200];
-    snprintf(will, sizeof(will), "OFFLINE:%s (desconexión inesperada)", currentUser);
-    mosquitto_will_set(mosq, TOPIC, strlen(will), will, 2, true);
-
+    char will[500];
+    snprintf(will, sizeof(will), "OFFLINE: %s (desconexión inesperada)\n",
+             currentUser);
+    mosquitto_will_set(mosq, TOPIC, strlen(will), will, QOS, false);
 
     mosquitto_connect_callback_set(mosq, on_connect);
     mosquitto_disconnect_callback_set(mosq, on_disconnect);
@@ -118,8 +123,8 @@ int main(int argc, char *argv[]) {
 
     // Mensaje visible de inicio de sesión
     char mss_with_username[200];
-    snprintf(mss_with_username, sizeof(mss_with_username),
-             "ONLINE: %s", currentUser);
+    snprintf(mss_with_username, sizeof(mss_with_username), "ONLINE: %s",
+             currentUser);
     mosquitto_publish(mosq, NULL, TOPIC, strlen(mss_with_username),
                       mss_with_username, QOS, false);
 
@@ -137,11 +142,12 @@ int main(int argc, char *argv[]) {
         char line[200];
         if (fgets(line, sizeof(line), stdin) == NULL)
             break;
-        line[strcspn(line, "\n")] = '\0'; 
+        line[strcspn(line, "\n")] = '\0';
 
         if (strncmp(line, "/salir", 6) == 0) {
             char msg[500];
-            snprintf(msg, sizeof(msg), "OFFLINE:%s (salió voluntariamente)", currentUser);
+            snprintf(msg, sizeof(msg), "OFFLINE: %s (salió voluntariamente)\n",
+                     currentUser);
 
             mosquitto_publish(mosq, NULL, TOPIC, strlen(msg), msg, QOS, false);
 
@@ -164,9 +170,8 @@ int main(int argc, char *argv[]) {
             show_users();
         } else if (strncmp(line, "/help", 5) == 0) {
             show_help();
-        }
-        else {
-            if(strlen(line) == 0) {
+        } else {
+            if (strlen(line) == 0) {
                 continue;
             }
             char buffer[250];
@@ -176,8 +181,6 @@ int main(int argc, char *argv[]) {
     }
 
     mosquitto_loop_stop(mosq, false);
-    mosquitto_destroy(mosq);
-    mosquitto_lib_cleanup();
 
     return 0;
 }
